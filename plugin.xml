@@ -124,6 +124,8 @@
         <source-file src="src/android/com/unarin/cordova/beacon/IBeaconServiceNotifier.java" target-dir="src/com/unarin/cordova/beacon" />
         <source-file src="src/android/com/unarin/cordova/beacon/ILocationManagerCommand.java" target-dir="src/com/unarin/cordova/beacon" />
         <source-file src="src/android/com/unarin/cordova/beacon/PausableThreadPoolExecutor.java" target-dir="src/com/unarin/cordova/beacon" />
+        <source-file src="src/android/com/unarin/cordova/beacon/StartBeaconMonitorReceiver.java" target-dir="src/com/unarin/cordova/beacon" />
+        <source-file src="src/android/com/unarin/cordova/beacon/IBeaconMonitorService.java" target-dir="src/com/unarin/cordova/beacon" />
 
 		<source-file src="libs/android/altbeacon.jar" target-dir="libs" framework="true" />
     </platform>
