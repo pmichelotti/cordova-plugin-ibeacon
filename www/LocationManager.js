@@ -296,6 +296,11 @@ LocationManager.prototype.stopMonitoringForRegion = function(region) {
 	return this._promisedExec('stopMonitoringForRegion', [region], []);
 };
 
+LocationManager.prototype.startBackgroundMonitoringForRegion = function(region) {
+	Regions.checkRegionType(region);
+	return this._promisedExec('startBackgroundMonitoringForRegion', [region], []);
+};
+
 /**
  * Request state the for specified region. When result is ready
  * didDetermineStateForRegion is triggered. This can be any region, 

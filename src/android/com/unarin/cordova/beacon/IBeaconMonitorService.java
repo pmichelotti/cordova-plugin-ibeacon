@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.os.*;
 import android.os.Process;
 import android.provider.Settings;
+import android.util.Log;
 import org.altbeacon.beacon.BeaconConsumer;
 import org.altbeacon.beacon.BeaconManager;
 import org.altbeacon.beacon.MonitorNotifier;
@@ -19,22 +20,22 @@ import java.util.Calendar;
 
 public class IBeaconMonitorService extends Service implements BeaconConsumer {
 
+    public static final String TAG = "com.unarin.cordova.beacon";
+
+    public static final String REGION_EXTRA = "com.unarin.cordova.beacon.IBeaconMonitorService.REGION";
+
     private BeaconManager mBeaconManager;
     private String deviceId;
 
     @Override
     public void onCreate() {
-        HandlerThread thread = new HandlerThread("ServiceStartArguments",
-                Process.THREAD_PRIORITY_BACKGROUND);
-        thread.start();
-
+        Log.d(TAG, "Creating IBeaconMonitorService");
         deviceId = Settings.Secure.getString(this.getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
+        Log.d(TAG, "Created IBeaconMonitorService for device " + deviceId);
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-
-        new SendLocationEventTask().execute(new LocationEvent("startup", "dummy-location"));
 
         if (mBeaconManager == null) {
             mBeaconManager = BeaconManager.getInstanceForApplication(this);
@@ -59,11 +60,21 @@ public class IBeaconMonitorService extends Service implements BeaconConsumer {
                 }
 
                 private void sendLocationUpdate(Region region, String eventType) {
-                    //TODO: Spin this processing off to another thread
                     //TODO: what the heck are these IDs?
+                    Log.d(TAG, "Sending event for region " + region.getId1() + " - " + region.getId2() + " - " + region.getId3());
                     new SendLocationEventTask().execute(new LocationEvent(eventType, "dummy-location"));
                 }
             });
+        }
+
+        if (intent.hasExtra(REGION_EXTRA)) {
+            Region regionToMonitor = (Region) intent.getParcelableExtra(REGION_EXTRA);
+            Log.d(TAG, "Region extra included for region " + regionToMonitor.getUniqueId());
+            try {
+                mBeaconManager.startMonitoringBeaconsInRegion(regionToMonitor);
+            } catch (RemoteException e) {
+                Log.e(TAG, "Monitoring failed for region " + regionToMonitor.getUniqueId() + " - " + e.getCause());
+            }
         }
 
         return START_STICKY;
@@ -84,6 +95,7 @@ public class IBeaconMonitorService extends Service implements BeaconConsumer {
 
         @Override
         protected String doInBackground(LocationEvent... locationEvents) {
+            Log.d(TAG, "Starting processing of location event for " + locationEvents[0].getLocation());
             try {
                 postJson("http://circuit-2015-services-p.elasticbeanstalk.com/devices/" + deviceId + "/locationEvents", "{ \"location\": \"" + locationEvents[0].getLocation() + "\", \"type\": \"" + locationEvents[0].getType() + "\", \"occurredAt\": " + locationEvents[0].getTimestamp() + " }");
             } catch (IOException e) {
@@ -99,8 +111,11 @@ public class IBeaconMonitorService extends Service implements BeaconConsumer {
         try {
             url = new URL(endpoint);
         } catch (MalformedURLException e) {
+            Log.e(TAG, "Malformed URL Exception encountered for url " + endpoint, e);
             throw new IllegalArgumentException("invalid url: " + endpoint);
         }
+
+        Log.d(TAG, "About to send " + json + " to " + endpoint);
 
         HttpURLConnection conn = null;
         try {

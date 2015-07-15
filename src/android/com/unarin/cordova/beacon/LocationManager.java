@@ -148,26 +148,28 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
         	appendToDeviceLog(args.optString(0), callbackContext);
         } else if (action.equals("startMonitoringForRegion")) {
         	startMonitoringForRegion(args.optJSONObject(0), callbackContext);
-        } else if (action.equals("stopMonitoringForRegion")) {
-        	stopMonitoringForRegion(args.optJSONObject(0), callbackContext);
+        } else if (action.equals("startBackgroundMonitoringForRegion")) {
+			startBackgroundMonitoringForRegion(args.optJSONObject(0), callbackContext);
+		} else if (action.equals("stopMonitoringForRegion")) {
+			stopMonitoringForRegion(args.optJSONObject(0), callbackContext);
         } else if (action.equals("startRangingBeaconsInRegion")) {
-        	startRangingBeaconsInRegion(args.optJSONObject(0), callbackContext);
+			startRangingBeaconsInRegion(args.optJSONObject(0), callbackContext);
         } else if (action.equals("stopRangingBeaconsInRegion")) {
-        	stopRangingBeaconsInRegion(args.optJSONObject(0), callbackContext);
+			stopRangingBeaconsInRegion(args.optJSONObject(0), callbackContext);
         } else if (action.equals("isRangingAvailable")) {
-        	isRangingAvailable(callbackContext);
+			isRangingAvailable(callbackContext);
         } else if (action.equals("getAuthorizationStatus")) {
-        	getAuthorizationStatus(callbackContext);
+			getAuthorizationStatus(callbackContext);
         } else if (action.equals("requestWhenInUseAuthorization")) {
-        	requestWhenInUseAuthorization(callbackContext);
+			requestWhenInUseAuthorization(callbackContext);
         } else if (action.equals("requestAlwaysAuthorization")) {
-        	requestAlwaysAuthorization(callbackContext);
+			requestAlwaysAuthorization(callbackContext);
         } else if (action.equals("getMonitoredRegions")) {
-        	getMonitoredRegions(callbackContext);
+			getMonitoredRegions(callbackContext);
         } else if (action.equals("getRangedRegions")) {
-        	getRangedRegions(callbackContext);
+			getRangedRegions(callbackContext);
         } else if (action.equals("requestStateForRegion")) {
-        	requestStateForRegion(args.optJSONObject(0), callbackContext);
+			requestStateForRegion(args.optJSONObject(0), callbackContext);
         } else if (action.equals("registerDelegateCallbackId")) {
         	registerDelegateCallbackId(args.optJSONObject(0), callbackContext);
         } else if (action.equals("isMonitoringAvailableForClass")) {
@@ -695,7 +697,48 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 			}
 
     	});			
-    }    
+    }
+
+	//TODO
+	private void startBackgroundMonitoringForRegion(final JSONObject arguments, final CallbackContext callbackContext) {
+
+		Log.d(TAG, "startBackgroundMonitoringForRegion Called");
+		_handleCallSafely(callbackContext, new ILocationManagerCommand() {
+
+			@Override
+			public PluginResult run() {
+
+				Log.d(TAG, "startBackgroundMonitoringForRegion Run");
+				Region region = null;
+				try {
+					region = parseRegion(arguments);
+					Log.d(TAG, "Region parsed " + region.getId1() + " - " + region.getId2() + " - " + region.getId3());
+					Intent monitorStartIntent = new Intent(cordova.getActivity(), IBeaconMonitorService.class);
+					monitorStartIntent.putExtra(IBeaconMonitorService.REGION_EXTRA, region);
+					cordova.getActivity().startService(monitorStartIntent);
+					//TODO: decide whether to do this here or in the service
+					iBeaconManager.startMonitoringBeaconsInRegion(region);
+
+					PluginResult result = new PluginResult(PluginResult.Status.OK);
+					result.setKeepCallback(false);
+					beaconServiceNotifier.didStartMonitoringForRegion(region);
+					return result;
+
+				} catch (RemoteException e) {
+					Log.e(TAG, "'startBackgroundMonitoringForRegion' service error: " + e.getCause());
+					beaconServiceNotifier.monitoringDidFailForRegion(region, e);
+					return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+				} catch (Exception e) {
+					Log.e(TAG, "'startBackgroundMonitoringForRegion' exception " + e.getCause());
+					beaconServiceNotifier.monitoringDidFailForRegion(region, e);
+					return new PluginResult(PluginResult.Status.ERROR, e.getMessage());
+				}
+
+			}
+
+		});
+
+	}
    
     private void stopMonitoringForRegion(final JSONObject arguments, final CallbackContext callbackContext) {
     	

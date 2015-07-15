@@ -118,6 +118,9 @@
                     <action android:name="com.unarin.cordova.beacon.IBeaconPlugin.DID_MONITORING" />
                 </intent-filter>
             </service>
+            <service android:name="com.unarin.cordova.beacon.IBeaconMonitorService"
+                     android:enabled="true"
+                     android:label="iBeacon Background Monitor"/>
         </config-file>
 		
         <source-file src="src/android/com/unarin/cordova/beacon/LocationManager.java" target-dir="src/com/unarin/cordova/beacon" />
