@@ -1,15 +1,15 @@
 package com.unarin.cordova.beacon;
 
 import android.app.Service;
+import android.content.ContentValues;
 import android.content.Intent;
+import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
 import android.os.*;
 import android.os.Process;
 import android.provider.Settings;
 import android.util.Log;
-import org.altbeacon.beacon.BeaconConsumer;
-import org.altbeacon.beacon.BeaconManager;
-import org.altbeacon.beacon.MonitorNotifier;
-import org.altbeacon.beacon.Region;
+import org.altbeacon.beacon.*;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -26,11 +26,13 @@ public class IBeaconMonitorService extends Service implements BeaconConsumer {
 
     private BeaconManager mBeaconManager;
     private String deviceId;
+    private BeaconRegionDbHelper beaconRegionDbHelper;
 
     @Override
     public void onCreate() {
         Log.d(TAG, "Creating IBeaconMonitorService");
         deviceId = Settings.Secure.getString(this.getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
+        beaconRegionDbHelper = new BeaconRegionDbHelper(this);
         Log.d(TAG, "Created IBeaconMonitorService for device " + deviceId);
     }
 
@@ -41,7 +43,7 @@ public class IBeaconMonitorService extends Service implements BeaconConsumer {
             mBeaconManager = BeaconManager.getInstanceForApplication(this);
             //TODO: Add parser for iBeacon?
             mBeaconManager.bind(this);
-            //TODO: Lookup all prior Regions to monitor
+            new StartMonitoringStoredRegionsTask().execute();
 
             mBeaconManager.setMonitorNotifier(new MonitorNotifier() {
                 @Override
@@ -60,18 +62,19 @@ public class IBeaconMonitorService extends Service implements BeaconConsumer {
                 }
 
                 private void sendLocationUpdate(Region region, String eventType) {
-                    //TODO: what the heck are these IDs?
+                    //Note - Unique ID is the text ID provided on beacon registration, ID1 is the UUID, ID2 is the Major ID, ID3 is the Minor ID
                     Log.d(TAG, "Sending event for region " + region.getId1() + " - " + region.getId2() + " - " + region.getId3());
-                    new SendLocationEventTask().execute(new LocationEvent(eventType, "dummy-location"));
+                    new SendLocationEventTask().execute(new LocationEvent(eventType, region.getUniqueId()));
                 }
             });
         }
 
-        if (intent.hasExtra(REGION_EXTRA)) {
+        if (intent != null && intent.hasExtra(REGION_EXTRA)) {
             Region regionToMonitor = (Region) intent.getParcelableExtra(REGION_EXTRA);
             Log.d(TAG, "Region extra included for region " + regionToMonitor.getUniqueId());
             try {
                 mBeaconManager.startMonitoringBeaconsInRegion(regionToMonitor);
+                new StoreRegionTask().execute(regionToMonitor);
             } catch (RemoteException e) {
                 Log.e(TAG, "Monitoring failed for region " + regionToMonitor.getUniqueId() + " - " + e.getCause());
             }
@@ -88,6 +91,60 @@ public class IBeaconMonitorService extends Service implements BeaconConsumer {
 
     @Override
     public void onBeaconServiceConnect() {
+
+    }
+
+    private class StartMonitoringStoredRegionsTask extends AsyncTask<Void, Void, String> {
+
+        @Override
+        protected String doInBackground(Void... voids) {
+            Log.d(TAG, "Retrieving regions from SQLite");
+            SQLiteDatabase db = beaconRegionDbHelper.getReadableDatabase();
+            Cursor resultCursor = db.query(
+                    BeaconRegionContract.RegionEntry.TABLE_NAME,
+                    new String[] {BeaconRegionContract.RegionEntry.BEACON_ID, BeaconRegionContract.RegionEntry.REGION_ID},
+                    null,
+                    null,
+                    null,
+                    null,
+                    null
+            );
+
+            while (resultCursor.moveToNext()) {
+                String currentBeaconId = resultCursor.getString(resultCursor.getColumnIndexOrThrow(BeaconRegionContract.RegionEntry.BEACON_ID));
+                String currentRegionId = resultCursor.getString(resultCursor.getColumnIndexOrThrow(BeaconRegionContract.RegionEntry.REGION_ID));
+                Log.d(TAG, "Reinitializing monitoring of region " + currentRegionId + " based on database contents");
+                try {
+                    mBeaconManager.startMonitoringBeaconsInRegion(new Region(currentRegionId, Identifier.parse(currentBeaconId), null, null));
+                } catch (RemoteException e) {
+                    Log.e(TAG, "Monitoring failed for region " + currentRegionId + " during database lookup - " + e.getCause());
+                }
+            }
+            resultCursor.close();
+
+            return null;
+        }
+
+    }
+
+    private class StoreRegionTask extends AsyncTask<Region, Void, String> {
+
+        @Override
+        protected String doInBackground(Region... regions) {
+            Log.d(TAG, "Storing region " + regions[0].getId1() + " to SQLite");
+            SQLiteDatabase db = beaconRegionDbHelper.getWritableDatabase();
+            ContentValues regionValues = new ContentValues();
+            regionValues.put(BeaconRegionContract.RegionEntry._ID, regions[0].getId1().toString());
+            regionValues.put(BeaconRegionContract.RegionEntry.BEACON_ID, regions[0].getId1().toString());
+            regionValues.put(BeaconRegionContract.RegionEntry.REGION_ID, regions[0].getUniqueId());
+            long insertResult = db.insert(BeaconRegionContract.RegionEntry.TABLE_NAME, null, regionValues);
+
+            if (insertResult == -1L) {
+                Log.i(TAG, "Unable to insert row for Beacon " + regions[0].getUniqueId() + " - this beacon probably already exists in the database");
+            }
+            Log.d(TAG, "Completed storing region " + regions[0].getId1().toString());
+            return null;
+        }
 
     }
 
