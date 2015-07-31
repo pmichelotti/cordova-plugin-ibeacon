@@ -16,7 +16,7 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.Calendar;
+import java.util.*;
 
 public class IBeaconMonitorService extends Service implements BeaconConsumer {
 
@@ -44,6 +44,61 @@ public class IBeaconMonitorService extends Service implements BeaconConsumer {
             //TODO: Add parser for iBeacon?
             mBeaconManager.bind(this);
             new StartMonitoringStoredRegionsTask().execute();
+
+            mBeaconManager.setRangeNotifier(new RangeNotifier() {
+
+                private Map<String, List<BeaconEvent>> beaconEventsMap = new HashMap<String, List<BeaconEvent>>();
+
+                @Override
+                public void didRangeBeaconsInRegion(Collection<Beacon> beacons, Region region) {
+                    for (Beacon currentBeacon : beacons) {
+                        if (!beaconEventsMap.containsKey(region.getUniqueId())) {
+                            beaconEventsMap.put(region.getUniqueId(), new ArrayList<BeaconEvent>());
+                        }
+
+                        long currentTimestamp = Calendar.getInstance().getTimeInMillis();
+
+                        Log.d(TAG, "Event for " + region.getUniqueId() + " at " + currentTimestamp + " with distance " + currentBeacon.getDistance());
+                        beaconEventsMap.get(region.getUniqueId()).add(new BeaconEvent(region.getUniqueId(), currentBeacon.getDistance(), currentTimestamp));
+
+                        List<BeaconEvent> filteredEvents = new ArrayList<BeaconEvent>();
+
+                        for (BeaconEvent currentBeaconEvent : beaconEventsMap.get(region.getUniqueId())) {
+                            if (currentTimestamp - currentBeaconEvent.getTimestamp() < 30000) {
+                                filteredEvents.add(currentBeaconEvent);
+                            }
+                        }
+
+                        if (filteredEvents.size() != beaconEventsMap.get(region.getUniqueId()).size() && filteredEvents.size() > 10) {
+                            double distanceTotal = 0.0;
+
+                            for (BeaconEvent currentBeaconEvent : filteredEvents) {
+                                distanceTotal += currentBeaconEvent.getDistance();
+                            }
+
+                            if (distanceTotal / filteredEvents.size() <= 2.0) {
+                                sendLocationUpdate(region, "immediate");
+                                Log.d(TAG, "Sending immediate event at " + currentTimestamp);
+                                filteredEvents = new ArrayList<BeaconEvent>();
+                            }
+                            else if (distanceTotal / filteredEvents.size() <= 5.0) {
+                                sendLocationUpdate(region, "near");
+                                Log.d(TAG, "Sending near event at " + currentTimestamp);
+                                filteredEvents = new ArrayList<BeaconEvent>();
+                            }
+                        }
+
+                        beaconEventsMap.put(region.getUniqueId(), filteredEvents);
+                    }
+                }
+
+                private void sendLocationUpdate(Region region, String eventType) {
+                    //Note - Unique ID is the text ID provided on beacon registration, ID1 is the UUID, ID2 is the Major ID, ID3 is the Minor ID
+                    Log.d(TAG, "Sending event for region " + region.getId1() + " - " + region.getId2() + " - " + region.getId3());
+                    new SendLocationEventTask().execute(new LocationEvent(eventType, region.getUniqueId()));
+                }
+
+            });
 
             mBeaconManager.setMonitorNotifier(new MonitorNotifier() {
                 @Override
@@ -74,6 +129,7 @@ public class IBeaconMonitorService extends Service implements BeaconConsumer {
             Log.d(TAG, "Region extra included for region " + regionToMonitor.getUniqueId());
             try {
                 mBeaconManager.startMonitoringBeaconsInRegion(regionToMonitor);
+                mBeaconManager.startRangingBeaconsInRegion(regionToMonitor);
                 new StoreRegionTask().execute(regionToMonitor);
             } catch (RemoteException e) {
                 Log.e(TAG, "Monitoring failed for region " + regionToMonitor.getUniqueId() + " - " + e.getCause());
@@ -116,6 +172,7 @@ public class IBeaconMonitorService extends Service implements BeaconConsumer {
                 Log.d(TAG, "Reinitializing monitoring of region " + currentRegionId + " based on database contents");
                 try {
                     mBeaconManager.startMonitoringBeaconsInRegion(new Region(currentRegionId, Identifier.parse(currentBeaconId), null, null));
+                    mBeaconManager.startRangingBeaconsInRegion(new Region(currentRegionId, Identifier.parse(currentBeaconId), null, null));
                 } catch (RemoteException e) {
                     Log.e(TAG, "Monitoring failed for region " + currentRegionId + " during database lookup - " + e.getCause());
                 }
@@ -219,6 +276,30 @@ public class IBeaconMonitorService extends Service implements BeaconConsumer {
 
         public String getLocation() {
             return location;
+        }
+
+        public long getTimestamp() {
+            return timestamp;
+        }
+    }
+
+    private static class BeaconEvent {
+        private final String identifier;
+        private final double distance;
+        private final long timestamp;
+
+        private BeaconEvent(String identifier, double distance, long timestamp) {
+            this.identifier = identifier;
+            this.distance = distance;
+            this.timestamp = timestamp;
+        }
+
+        public String getIdentifier() {
+            return identifier;
+        }
+
+        public double getDistance() {
+            return distance;
         }
 
         public long getTimestamp() {
