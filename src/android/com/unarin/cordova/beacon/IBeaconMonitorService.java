@@ -76,12 +76,12 @@ public class IBeaconMonitorService extends Service implements BeaconConsumer {
                                 distanceTotal += currentBeaconEvent.getDistance();
                             }
 
-                            if (distanceTotal / filteredEvents.size() <= 2.0) {
+                            if (distanceTotal / filteredEvents.size() <= 1.0) {
                                 sendLocationUpdate(region, "immediate");
                                 Log.d(TAG, "Sending immediate event at " + currentTimestamp);
                                 filteredEvents = new ArrayList<BeaconEvent>();
                             }
-                            else if (distanceTotal / filteredEvents.size() <= 5.0) {
+                            else if (distanceTotal / filteredEvents.size() <= 3.0) {
                                 sendLocationUpdate(region, "near");
                                 Log.d(TAG, "Sending near event at " + currentTimestamp);
                                 filteredEvents = new ArrayList<BeaconEvent>();
